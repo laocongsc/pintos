@@ -145,6 +145,7 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 void
 palloc_free_page (void *page) 
 {
+  //printf("FREE: page=%p (caller: %p)\n", page, __builtin_return_address(0));
   palloc_free_multiple (page, 1);
 }
 

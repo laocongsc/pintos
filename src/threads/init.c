@@ -134,6 +134,48 @@ pintos_init (void)
     run_actions (argv);
   } else {
     // TODO: no command line passed to kernel. Run interactively 
+
+    /* A buffer to store command from user */
+    int cnt, maxsize = 256;
+    char *buffer = malloc(maxsize + 1);
+    if (buffer == NULL)
+      printf("malloc space error\n");
+    else while (1) {
+      printf("PKUOS>");
+      cnt = 0;
+      memset(buffer, 0, maxsize);
+      while (1) {
+        char c = input_getc();
+        /* deal with Enter */
+        if (c == 13) {
+          printf("\n");
+          break;
+        }
+        /* deal with Backspace */
+        if (c == 127) {
+          if (cnt == 0)  continue;
+          *(buffer + cnt) = 0;
+          --cnt;
+          printf("\b \b");
+          continue;
+        }
+        /* if the buffer is full, we do not accept more characters */
+        if (cnt >= maxsize)  continue;
+        /* display printable characters on screen */
+        if (c >= 32 && c <= 126)
+          printf("%c", c);
+        /* add it to the buffer */
+        *(buffer + cnt) = c;
+        ++cnt;
+      }
+      if (strcmp(buffer, "exit") == 0)
+        break;
+      if (strcmp(buffer, "whoami") == 0)
+        printf("2300017795\n");
+      else  printf("invalid command\n");
+    }
+    free(buffer);
+    printf("Shell terminated.\n");
   }
 
   /* Finish up. */

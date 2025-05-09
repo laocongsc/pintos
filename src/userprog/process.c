@@ -14,55 +14,118 @@
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
+#include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
 static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static bool load (const char *file_name, char *cmdline, void (**eip) (void), void **esp);
+
+/* a struct to pass arguments to start_process */
+struct args{
+  char* fn_copy;
+  tid_t parent_tid;
+  int success;
+};
 
 /** Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
-process_execute (const char *file_name) 
+process_execute (const char *cmdline) 
 {
-  char *fn_copy;
+  char *fn_copy, *file_name, *save_ptr;
   tid_t tid;
 
-  /* Make a copy of FILE_NAME.
+  /* Make a copy of FILE_NAME, used for argument passing
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+  strlcpy (fn_copy, cmdline, PGSIZE);
+
+  /* another copy of FILE_NAME, used for thread's name */
+  file_name = palloc_get_page(0);
+  if (file_name == NULL) {
+    palloc_free_page(fn_copy);
+    return TID_ERROR;
+  }
+  strlcpy(file_name, cmdline, PGSIZE);
+  char *token = strtok_r(file_name, " ", &save_ptr);
+
+  /* for passing arguments to start_process */
+  struct args* argss = malloc(sizeof(struct args));
+  if (argss == NULL) {
+    palloc_free_page(fn_copy);
+    palloc_free_page(file_name);
+    return TID_ERROR;
+  }
+  argss -> fn_copy = fn_copy;
+  argss -> parent_tid = thread_tid();
+  argss -> success = 0;
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  tid = thread_create (token, PRI_DEFAULT + 5, start_process, argss);
+  palloc_free_page(file_name);
+  if (tid == TID_ERROR) {
+    palloc_free_page(fn_copy);
+    free(argss);
+    return TID_ERROR;
+  }
+
+  /* Ensure that the parent knows whether its child successfully loads */
+  enum intr_level old_level;
+  old_level = intr_disable ();
+  if (((argss -> success) >> 1) == 0)  thread_block();
+  intr_set_level (old_level);
+
+  if ((argss -> success & 1) == 0)  tid = TID_ERROR;
+  free(argss);
+
   return tid;
 }
 
 /** A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *argss)
 {
-  char *file_name = file_name_;
+  char *cmdline = ((struct args*)argss) -> fn_copy;
+  tid_t parent_tid = ((struct args*)argss) -> parent_tid;
   struct intr_frame if_;
   bool success;
+
+  /* Initialize information of child process */
+  struct thread* child = thread_current();
+  struct thread* parent = get_thread(parent_tid);
+  child -> parent = parent_tid;
+  child -> exit_status = -1;
+  memset(child -> all_files, 0, sizeof(child -> all_files));
+  sema_init(&child -> s, 0);
+  child -> exe = NULL;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load(thread_current() -> name, cmdline, &if_.eip, &if_.esp);
+  ((struct args*)argss) -> success = (int)success + 2;
 
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
+  /* Unblock its parent process to inform it the load status */
+  enum intr_level old_level;
+  old_level = intr_disable ();
+  if (parent -> status == THREAD_BLOCKED)
+    thread_unblock(parent);
+  intr_set_level (old_level);
+  
+  palloc_free_page (cmdline);
+  
+  /* return to normal priority */
+  thread_set_priority(PRI_DEFAULT);
+
   if (!success) 
     thread_exit ();
 
@@ -76,6 +139,16 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
+/* Find a child according to its tid in list dead_children */
+static struct exec_info* find_child(struct list* l, tid_t child_tid) {
+  struct list_elem* e;
+  for (e = list_begin(l); e != list_end(l); e = list_next(e)) {
+    struct exec_info* info = list_entry(e, struct exec_info, elem);
+    if (info -> tid == child_tid)  return info;
+  }
+  return NULL;
+}
+
 /** Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
@@ -85,10 +158,27 @@ start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
+/** Astonishingly, there's no problem 2-2 in pintos book! */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  return -1;
+  struct exec_info* child_info = find_child(&thread_current() -> dead_children, child_tid);
+  if (child_info == NULL) {
+    /** Its child has not died. */
+    struct thread* child = get_thread(child_tid);
+    /** check if it is a dead child from other family */
+    if (child == NULL)  return -1;
+    /** check if it is a live child from other family */
+    if (child -> parent != thread_tid())  return -1;
+    /** Now, we guarantee that it's our own child. */
+    sema_down(&child -> s);
+    child_info = find_child(&thread_current() -> dead_children, child_tid);
+  }
+  /** Its child has already dead now. */
+  int val = child_info -> exit_status;
+  list_remove(&child_info -> elem);
+  free(child_info);
+  return val;
 }
 
 /** Free the current process's resources. */
@@ -97,6 +187,12 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  /* print termination messages */
+  printf ("%s: exit(%d)\n", cur -> name, cur -> exit_status);
+
+  file_close(cur -> exe);
+  cur -> exe = NULL;
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -206,7 +302,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+load (const char *file_name, char *cmdline, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
@@ -228,6 +324,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+  t -> exe = file;
+  file_deny_write(file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -299,7 +397,20 @@ load (const char *file_name, void (**eip) (void), void **esp)
             goto done;
           break;
         }
-    }
+  }
+
+  /* Divide command line. */
+  char **argv = palloc_get_page(0);
+  char *token, *save_ptr;
+  size_t argc = 0;
+  if (argv == NULL)
+    goto done;
+  size_t len = strlen(cmdline) + 1; 
+  for (token = strtok_r(cmdline, " ", &save_ptr); token != NULL;
+       token = strtok_r(NULL, " ", &save_ptr)) {
+    *(argv + argc) = token;
+    argc++;
+  }
 
   /* Set up stack. */
   if (!setup_stack (esp))
@@ -308,16 +419,38 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
+  /* Put the arguments for the initial function on the stack. */
+  /* put cmdline (argv[][]) on the stack */
+  *esp -= len;
+  memcpy(*esp, cmdline, len);
+
+  /* deal with argv[] (update address) */
+  for (size_t i = 0, delta = (size_t)(*esp) - (size_t)cmdline; i < argc; i++)
+    *(argv + i) += delta;
+  *(argv + argc) = 0;
+  while ((size_t)(*esp) % 4 != 0)  (*esp)--;
+  
+  /* put argv[] on the stack */
+  len = (argc + 1) * 4;
+  *esp -= len;
+  memcpy(*esp, (char*)argv, len);
+
+  /* store ARGV, ARGC and fake return address */
+  *(size_t*)(*esp - 4) = *(size_t*)(esp);
+  *(size_t*)(*esp - 8) = argc;
+  *(size_t*)(*esp - 12) = 0;
+  *esp -= 12;
+
+  palloc_free_page(argv);
+  
   success = true;
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
   return success;
 }
 
 /** load() helpers. */
-
 static bool install_page (void *upage, void *kpage, bool writable);
 
 /** Checks whether PHDR describes a valid, loadable segment in

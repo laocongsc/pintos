@@ -158,7 +158,7 @@ pagedir_clear_page (uint32_t *pd, void *upage)
 
 /** Returns true if the PTE for virtual page VPAGE in PD is dirty,
    that is, if the page has been modified since the PTE was
-   installed.
+   installed. By dirty bit.
    Returns false if PD contains no PTE for VPAGE. */
 bool
 pagedir_is_dirty (uint32_t *pd, const void *vpage) 

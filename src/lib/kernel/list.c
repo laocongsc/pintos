@@ -522,3 +522,12 @@ list_min (struct list *list, list_less_func *less, void *aux)
     }
   return min;
 }
+
+/** Returns true when elem is in the list. */
+bool in_list(struct list *list, struct list_elem *elem) {
+  struct list_elem *e;
+
+  for (e = list_begin (list); e != list_end (list); e = list_next (e))
+    if (e == elem)  return 1;
+  return 0;
+}

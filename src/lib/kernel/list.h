@@ -155,6 +155,7 @@ struct list_elem *list_back (struct list *);
 /** List properties. */
 size_t list_size (struct list *);
 bool list_empty (struct list *);
+bool in_list(struct list *list, struct list_elem *elem);
 
 /** Miscellaneous. */
 void list_reverse (struct list *);

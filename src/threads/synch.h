@@ -4,6 +4,8 @@
 #include <list.h>
 #include <stdbool.h>
 
+#define TOTAL_PRI 64
+
 /** A counting semaphore. */
 struct semaphore 
   {
@@ -20,7 +22,7 @@ void sema_self_test (void);
 /** Lock. */
 struct lock 
   {
-    struct thread *holder;      /**< Thread holding lock (for debugging). */
+    struct thread *holder;      /**< Thread holding lock. */
     struct semaphore semaphore; /**< Binary semaphore controlling access. */
   };
 
@@ -33,7 +35,7 @@ bool lock_held_by_current_thread (const struct lock *);
 /** Condition variable. */
 struct condition 
   {
-    struct list waiters;        /**< List of waiting threads. */
+    struct list waiters[TOTAL_PRI];        /**< List of waiting threads. */
   };
 
 void cond_init (struct condition *);
