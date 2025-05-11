@@ -69,6 +69,15 @@
     "shutdown.h": "c",
     "malloc.h": "c",
     "*.inc": "c",
-    "directory.h": "c"
+    "directory.h": "c",
+    "filesys.h": "c",
+    "string.h": "c",
+    "stdlib.h": "c",
+    "process.h": "c",
+    "tss.h": "c",
+    "init.h": "c",
+    "interrupt.h": "c",
+    "debug.h": "c",
+    "gdt.h": "c"
   }
 }

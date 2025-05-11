@@ -10,22 +10,22 @@
 
 /** States in a thread's life cycle. */
 enum thread_status
-  {
-    THREAD_RUNNING,     /**< Running thread. */
-    THREAD_READY,       /**< Not running but ready to run. */
-    THREAD_BLOCKED,     /**< Waiting for an event to trigger. */
-    THREAD_DYING        /**< About to be destroyed. */
-  };
+{
+    THREAD_RUNNING, /**< Running thread. */
+    THREAD_READY,   /**< Not running but ready to run. */
+    THREAD_BLOCKED, /**< Waiting for an event to trigger. */
+    THREAD_DYING    /**< About to be destroyed. */
+};
 
 /** Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
-#define TID_ERROR ((tid_t) -1)          /**< Error value for tid_t. */
+#define TID_ERROR ((tid_t) - 1) /**< Error value for tid_t. */
 
 /** Thread priorities. */
-#define PRI_MIN 0                       /**< Lowest priority. */
-#define PRI_DEFAULT 31                  /**< Default priority. */
-#define PRI_MAX 63                      /**< Highest priority. */
+#define PRI_MIN 0      /**< Lowest priority. */
+#define PRI_DEFAULT 31 /**< Default priority. */
+#define PRI_MAX 63     /**< Highest priority. */
 #define TOTAL_PRI 64
 #define MAX_STEP 8
 #define MAX_FD 32
@@ -87,48 +87,52 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
-  {
+{
     /* Owned by thread.c. */
-    tid_t tid;                          /**< Thread identifier. */
-    enum thread_status status;          /**< Thread state. */
-    char name[16];                      /**< Name (for debugging purposes). */
-    uint8_t *stack;                     /**< Saved stack pointer. */
-    int priority;                       /**< Priority. */
+    tid_t tid;                 /**< Thread identifier. */
+    enum thread_status status; /**< Thread state. */
+    char name[16];             /**< Name (for debugging purposes). */
+    uint8_t *stack;            /**< Saved stack pointer. */
+    int priority;              /**< Priority. */
     int ori_priority;
-    int niceness;                       /**< Niceness. */
-    struct list_elem allelem;           /**< List element for all threads list. */
+    int niceness;             /**< Niceness. */
+    struct list_elem allelem; /**< List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /**< List element. */
+    struct list_elem elem; /**< List element. */
     struct list_elem selem;
 
-    struct list* in_list;
-    struct thread* waiting_for;
-    struct lock* waiting_lock;
+    struct list *in_list;
+    struct thread *waiting_for;
+    struct lock *waiting_lock;
 
     int64_t sleep;
     int recent_cpu;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /**< Page directory. */
+    uint32_t *pagedir; /**< Page directory. */
 #endif
 
     int exit_status;
     tid_t parent;
-    struct file* all_files[MAX_FD];
+    struct file *all_files[MAX_FD];
     struct list dead_children;
     struct semaphore s;
-    struct file* exe;
+    struct file *exe;
+
+    /** Supplemental page table of the process. */
+    struct list sup_page_table;
 
     /* Owned by thread.c. */
-    unsigned magic;                     /**< Detects stack overflow. */
-  };
+    unsigned magic; /**< Detects stack overflow. */
+};
 
-struct exec_info{
-   struct list_elem elem;
-   tid_t tid;
-   int exit_status;
+struct exec_info
+{
+    struct list_elem elem;
+    tid_t tid;
+    int exit_status;
 };
 
 /** If false (default), use round-robin scheduler.
@@ -136,44 +140,44 @@ struct exec_info{
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
 
-void thread_init (void);
-void thread_start (void);
+void thread_init(void);
+void thread_start(void);
 
-void thread_tick (void);
-void thread_print_stats (void);
+void thread_tick(void);
+void thread_print_stats(void);
 
-typedef void thread_func (void *aux);
-tid_t thread_create (const char *name, int priority, thread_func *, void *);
+typedef void thread_func(void *aux);
+tid_t thread_create(const char *name, int priority, thread_func *, void *);
 
-void thread_block (void);
-void thread_unblock (struct thread *);
-void intr_thread_unblock (struct thread *);
+void thread_block(void);
+void thread_unblock(struct thread *);
+void intr_thread_unblock(struct thread *);
 
-struct thread *thread_current (void);
-tid_t thread_tid (void);
-const char *thread_name (void);
+struct thread *thread_current(void);
+tid_t thread_tid(void);
+const char *thread_name(void);
 
-void thread_exit (void) NO_RETURN;
-void thread_yield (void);
+void thread_exit(void) NO_RETURN;
+void thread_yield(void);
 
 /** Performs some operation on thread t, given auxiliary data AUX. */
-typedef void thread_action_func (struct thread *t, void *aux);
-void thread_foreach (thread_action_func *, void *);
+typedef void thread_action_func(struct thread *t, void *aux);
+void thread_foreach(thread_action_func *, void *);
 
-int thread_get_priority (void);
-void thread_set_priority (int);
+int thread_get_priority(void);
+void thread_set_priority(int);
 
-int thread_get_nice (void);
-void thread_set_nice (int nice);
-int thread_get_recent_cpu (void);
-int thread_get_load_avg (void);
+int thread_get_nice(void);
+void thread_set_nice(int nice);
+int thread_get_recent_cpu(void);
+int thread_get_load_avg(void);
 
-void donate_priority(struct thread* t, int new_priority);
+void donate_priority(struct thread *t, int new_priority);
 void recalculate_priority(void);
-void recursive_set_original_priority(struct thread* t);
+void recursive_set_original_priority(struct thread *t);
 
-bool cmp(const struct list_elem* a, const struct list_elem* b, void* aux);
+bool cmp(const struct list_elem *a, const struct list_elem *b, void *aux);
 
-struct thread* get_thread(tid_t tid);
+struct thread *get_thread(tid_t tid);
 
 #endif /**< threads/thread.h */
