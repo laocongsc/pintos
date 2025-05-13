@@ -6,6 +6,9 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "vm/frame.h"
+#include "userprog/syscall.h"
+#include "vm/swap.h"
+#include "userprog/pagedir.h"
 
 /** Number of page faults processed. */
 static long long page_fault_cnt;
@@ -139,9 +142,9 @@ static struct sup_page_table_entry *find_spte(void *addr)
 static void
 page_fault(struct intr_frame *f)
 {
-    bool not_present; /**< True: not-present page, false: writing r/o page. */
+    // bool not_present; /**< True: not-present page, false: writing r/o page. */
     bool write;       /**< True: access was write, false: access was read. */
-    bool user;        /**< True: access by user, false: access by kernel. */
+    // bool user;        /**< True: access by user, false: access by kernel. */
     void *fault_addr; /**< Fault address. */
 
     /* Obtain faulting address, the virtual address that was
@@ -160,26 +163,37 @@ page_fault(struct intr_frame *f)
     /* Count page faults. */
     page_fault_cnt++;
 
-    /* Determine cause. */
-    not_present = (f->error_code & PF_P) == 0;
+    // /* Determine cause. */
+    // not_present = (f->error_code & PF_P) == 0;
     write = (f->error_code & PF_W) != 0;
-    user = (f->error_code & PF_U) != 0;
+    // user = (f->error_code & PF_U) != 0;
 
+    /* If fault address is not from user space, just exit. */
     if (!is_user_vaddr(fault_addr))
-        PANIC("Not user address!");
+        exit(-1);
 
     struct sup_page_table_entry *spte = find_spte(fault_addr);
-    if (spte == NULL)
-        PANIC("Invalid access!");
+
+    /* If fault address is invalid, just exit. */
+    if (spte == NULL)  exit(-1);
+
+    /* If attempting to write to unwritable pages, just exit. */
+    if (write && spte->writable == false)  exit(-1);
 
     /* Get a page of memory. */
-    uint8_t *kpage = frame_alloc(PAL_USER | PAL_ZERO, NULL);
+    uint8_t *kpage = frame_alloc(PAL_USER | PAL_ZERO, spte, true);
     if (kpage == NULL)
         PANIC("Load failed.");
+    else  spte -> frame = kpage;
+
+    /* Load a page from swap slot. */
+    if (spte->slot != SWAP_NONE) {
+        swap_in(spte->slot, kpage);
+        spte->slot = SWAP_NONE;
+    }
 
     /* Lazy loading in load_segment. */
-    if (spte->file != NULL)
-    {
+    else if (spte->file != NULL) {
         /* Load this page. */
         file_seek(spte->file, spte->file_offset);
         if (file_read(spte->file, kpage, spte->read_bytes) != (int)spte->read_bytes)
@@ -197,6 +211,7 @@ page_fault(struct intr_frame *f)
     }
 
     spte->is_loaded = true;
+    frame_depin(kpage);
 }
 
 /** Adds a mapping from user virtual address UPAGE to kernel

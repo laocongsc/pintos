@@ -78,6 +78,11 @@
     "init.h": "c",
     "interrupt.h": "c",
     "debug.h": "c",
-    "gdt.h": "c"
+    "gdt.h": "c",
+    "frame.h": "c",
+    "pagedir.h": "c",
+    "list.h": "c",
+    "bitmap.h": "c",
+    "swap.h": "c"
   }
 }

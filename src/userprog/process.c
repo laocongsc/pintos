@@ -19,12 +19,10 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 static thread_func start_process NO_RETURN;
 static bool load(const char *file_name, char *cmdline, void (**eip)(void), void **esp);
-
-static bool
-install_page(void *upage, void *kpage, bool writable);
 
 /* a struct to pass arguments to start_process */
 struct args
@@ -221,6 +219,19 @@ void process_exit(void)
            directory, or our active page directory will be one
            that's been freed (and cleared). */
         cur->pagedir = NULL;
+
+        while (!list_empty(&cur->sup_page_table))
+        {
+            struct list_elem *e = list_pop_front(&cur->sup_page_table);
+            struct sup_page_table_entry *spte = list_entry(e, struct sup_page_table_entry, elem);
+            if (spte->is_loaded) {
+                if (spte->slot == SWAP_NONE)
+                    frame_free(spte->frame);
+                else  swap_set(spte->slot);
+            }
+            free(spte);
+        }
+
         pagedir_activate(NULL);
         pagedir_destroy(pd);
     }
@@ -533,6 +544,8 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
         size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+        /* For lazy loading, we just record relevant information in 
+           supplemental page table, but not actually load the page. */
         struct sup_page_table_entry *spte = malloc(sizeof(struct sup_page_table_entry));
         if (spte == NULL)
             return false;
@@ -543,6 +556,8 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
         spte->read_bytes = page_read_bytes;
         spte->zero_bytes = page_zero_bytes;
         spte->writable = writable;
+        spte->frame = NULL;
+        spte->slot = SWAP_NONE;
         list_push_back(&thread_current()->sup_page_table, &spte->elem);
 
         /* Advance. */
@@ -559,6 +574,8 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack(void **esp)
 {
+    /* For lazy loading, we just record relevant information in 
+       supplemental page table, but not actually load the page. */
     struct sup_page_table_entry *spte = malloc(sizeof(struct sup_page_table_entry));
     if (spte == NULL)
         return false;
@@ -567,17 +584,9 @@ setup_stack(void **esp)
     spte->is_loaded = false;
     spte->file = NULL;
     spte->writable = true;
+    spte->frame = NULL;
+    spte->slot = SWAP_NONE;
     list_push_back(&thread_current()->sup_page_table, &spte->elem);
     *esp = PHYS_BASE;
     return true;
-}
-
-static bool
-install_page(void *upage, void *kpage, bool writable)
-{
-    struct thread *t = thread_current();
-
-    /* Verify that there's not already a page at that virtual
-       address, then map our page there. */
-    return (pagedir_get_page(t->pagedir, upage) == NULL && pagedir_set_page(t->pagedir, upage, kpage, writable));
 }

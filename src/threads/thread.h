@@ -28,7 +28,7 @@ typedef int tid_t;
 #define PRI_MAX 63     /**< Highest priority. */
 #define TOTAL_PRI 64
 #define MAX_STEP 8
-#define MAX_FD 32
+#define MAX_FD 64
 
 /** A kernel thread or user process.
 
