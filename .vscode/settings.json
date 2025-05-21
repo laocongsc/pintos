@@ -83,6 +83,7 @@
     "pagedir.h": "c",
     "list.h": "c",
     "bitmap.h": "c",
-    "swap.h": "c"
+    "swap.h": "c",
+    "block.h": "c"
   }
 }
